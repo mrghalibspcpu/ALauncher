@@ -60,6 +60,12 @@ public class Prefs {
     public boolean statusClock() { return b("clock", true); }
     public boolean searchBar() { return b("search_bar", true); }
     public int dockCount() { return i("dock_count", 5); }
+    public int theme() { return i("theme", Theme.AUTO); }
+    public int clockStyle() { return i("clock_style", DepthClock.DEPTH); }
+    public float clockScale() { return i("clock_size", 100) / 100f; }
+    public String iconPack() { return s("icon_pack", ""); }
+    public boolean searchPill() { return b("search_pill", true); }
+    public boolean suggestions() { return b("suggestions", true); }
 
     public static final String HIDDEN = "hidden_apps";
     public static final String FAVS = "radial_favs";

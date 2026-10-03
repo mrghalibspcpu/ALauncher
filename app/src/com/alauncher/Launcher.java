@@ -44,6 +44,8 @@ public class Launcher extends Activity implements HomeView.Host, DrawerView.Host
     private ControlCenter cc;
     private RadialMenu orbit;
     private ActionSheet sheet;
+    private LockView lock;
+    private boolean keepAwake;
 
     private AppStore store;
     private Prefs prefs;
@@ -97,6 +99,10 @@ public class Launcher extends Activity implements HomeView.Host, DrawerView.Host
         sheet.setVisibility(View.GONE);
         root.addView(sheet, new FrameLayout.LayoutParams(-1, -1));
 
+        lock = new LockView(this);
+        root.addView(lock, new FrameLayout.LayoutParams(-1, -1));
+        applySystemBars();
+
         widgetManager = AppWidgetManager.getInstance(this);
         widgetHost = new AppWidgetHost(this, 0x4C41);  // "LA"
         sensors = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
@@ -132,8 +138,40 @@ public class Launcher extends Activity implements HomeView.Host, DrawerView.Host
         try { widgetHost.stopListening(); } catch (Throwable ignored) { }
     }
 
+    /** Dark icons in the system bars when the light theme is on. */
+    private void applySystemBars() {
+        int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN;
+        if (!Theme.dark(this)) {
+            flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            if (Build.VERSION.SDK_INT >= 26) flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        }
+        getWindow().getDecorView().setSystemUiVisibility(flags);
+    }
+
+    @Override public void onThemeChanged() {
+        Theme.invalidateBackdrop();
+        applySystemBars();
+        home.invalidate();
+        drawer.applyTheme();
+        cc.sync();
+        sheet.invalidate();
+        toast(Theme.dark(this) ? "Liquid Dark" : "Liquid Light");
+    }
+
+    @Override public void setKeepAwake(boolean on) {
+        keepAwake = on;
+        if (on) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+    }
+
+    @Override public boolean keepAwake() { return keepAwake; }
+
+    @Override public void focusSearch() { drawer.focusSearch(); }
+
     @Override protected void onResume() {
         super.onResume();
+        Theme.invalidateBackdrop();
+        applySystemBars();
         if (prefs.parallax()) {
             Sensor s = sensors.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
             if (s != null) sensors.registerListener(this, s, SensorManager.SENSOR_DELAY_UI);
@@ -156,6 +194,7 @@ public class Launcher extends Activity implements HomeView.Host, DrawerView.Host
 
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        if (lock.showing()) { lock.dismiss(); return; }
         if (sheet.showing()) { sheet.hide(); return; }
         if (orbit.showing()) { orbit.hide(); return; }
         if (ccOpen) { closeControlCenter(); return; }
@@ -165,6 +204,7 @@ public class Launcher extends Activity implements HomeView.Host, DrawerView.Host
     }
 
     @Override public void onBackPressed() {
+        if (lock.showing()) { lock.dismiss(); return; }
         if (sheet.showing()) { sheet.hide(); return; }
         if (orbit.showing()) { orbit.hide(); return; }
         if (ccOpen) { closeControlCenter(); return; }
@@ -216,7 +256,6 @@ public class Launcher extends Activity implements HomeView.Host, DrawerView.Host
     @Override public void openControlCenter() {
         if (ccOpen) return;
         ccOpen = true;
-        if (prefs.blurPanels()) cc.setBackdrop(snapshotBlur());
         cc.sync();
         cc.setVisibility(View.VISIBLE);
         cc.setTranslationY(-root.getHeight() * 0.25f);
@@ -306,7 +345,19 @@ public class Launcher extends Activity implements HomeView.Host, DrawerView.Host
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
     }
 
-    @Override public void openApp(AppItem a, View from, float x, float y) {
+    @Override public void openApp(final AppItem a, final View from, float x, float y) {
+        if (LockView.locked(this, a)) {
+            lock.ask("Unlock " + a.title(), false, accent, new LockView.OnUnlock() {
+                public void run(boolean ok) {
+                    if (ok) reallyOpen(a, from);
+                }
+            });
+            return;
+        }
+        reallyOpen(a, from);
+    }
+
+    private void reallyOpen(AppItem a, View from) {
         store.launch(this, a, from);
         if (drawerOpen) handler.postDelayed(new Runnable() { public void run() { closeDrawer(); } }, 220);
     }
@@ -416,11 +467,27 @@ public class Launcher extends Activity implements HomeView.Host, DrawerView.Host
                 ? "Unmark as distracting" : "Mark as distracting", Glyphs.SHIELD, false));
         rows.add(new ActionSheet.Row("hide", "Hide app", Glyphs.EYE_OFF, false));
         rows.add(new ActionSheet.Row("info", "App info", Glyphs.INFO, false));
+        rows.add(new ActionSheet.Row("applock", prefs.set(Prefs.LOCKED).contains(a.key())
+                ? "Remove app lock" : "Lock with PIN", Glyphs.LOCK, false));
+        final List<String> shortcuts = store.shortcutLabels(a);
+        for (int i = 0; i < Math.min(4, shortcuts.size()); i++) {
+            String[] parts = shortcuts.get(i).split("\u0000");
+            rows.add(new ActionSheet.Row("sc:" + i,
+                    parts.length > 1 ? parts[1] : parts[0], Glyphs.SHORTCUT, false));
+        }
         rows.add(new ActionSheet.Row("uninstall", "Uninstall", Glyphs.TRASH, true));
 
         sheet.show(x, y, a.title(), a.icon, accent, rows, new ActionSheet.OnAction() {
             public void run(String id) {
+                if (id.startsWith("sc:")) {
+                    int idx = Integer.parseInt(id.substring(3));
+                    if (idx < shortcuts.size()) {
+                        store.startShortcut(a, shortcuts.get(idx).split("\u0000")[0], null);
+                    }
+                    return;
+                }
                 switch (id) {
+                    case "applock": toggleAppLock(a); break;
                     case "open": openApp(a, null, 0, 0); break;
                     case "split": store.launchAdjacent(Launcher.this, a); break;
                     case "home": home.addAppToHome(a); break;
@@ -447,6 +514,20 @@ public class Launcher extends Activity implements HomeView.Host, DrawerView.Host
                 }
             }
         });
+    }
+
+    private void toggleAppLock(final AppItem a) {
+        if (!LockView.hasPin(this)) {
+            lock.ask("Set a 4-digit PIN", true, accent, new LockView.OnUnlock() {
+                public void run(boolean ok) {
+                    if (ok) { prefs.toggleIn(Prefs.LOCKED, a.key()); toast(a.title() + " locked"); }
+                }
+            });
+            return;
+        }
+        prefs.toggleIn(Prefs.LOCKED, a.key());
+        toast(prefs.set(Prefs.LOCKED).contains(a.key())
+                ? a.title() + " locked" : a.title() + " unlocked");
     }
 
     private void renameApp(final AppItem a) {
@@ -479,6 +560,8 @@ public class Launcher extends Activity implements HomeView.Host, DrawerView.Host
         rows.add(new ActionSheet.Row("timeline", "Time Machine", Glyphs.CLOCK, false));
         rows.add(new ActionSheet.Row("focus", Focus.active(this) ? "Stop Focus Mode" : "Start Focus (30m)", Glyphs.SHIELD, false));
         rows.add(new ActionSheet.Row("page", "Add page", Glyphs.PLUS, false));
+        rows.add(new ActionSheet.Row("theme", Theme.dark(this) ? "Switch to Liquid Light"
+                : "Switch to Liquid Dark", Glyphs.SUN, false));
         rows.add(new ActionSheet.Row("settings", "Launcher settings", Glyphs.GEAR, false));
         sheet.show(x, y, "Home screen", null, accent, rows, new ActionSheet.OnAction() {
             public void run(String id) {
@@ -499,6 +582,10 @@ public class Launcher extends Activity implements HomeView.Host, DrawerView.Host
                         break;
                     case "page":
                         if (home.pageCount < 6) { home.pageCount++; home.save(); home.goToPage(home.pageCount - 1); }
+                        break;
+                    case "theme":
+                        prefs.setI("theme", Theme.dark(Launcher.this) ? Theme.LIGHT : Theme.DARK);
+                        onThemeChanged();
                         break;
                     case "settings": openSettings(); break;
                 }
@@ -568,6 +655,12 @@ public class Launcher extends Activity implements HomeView.Host, DrawerView.Host
             case "lock": lockScreen(); break;
             case "restart": recreate(); break;
             case "sysinfo": openControlCenter(); break;
+            case "light": prefs.setI("theme", Theme.LIGHT); onThemeChanged(); break;
+            case "dark": prefs.setI("theme", Theme.DARK); onThemeChanged(); break;
+            case "theme":
+                prefs.setI("theme", Theme.dark(this) ? Theme.LIGHT : Theme.DARK);
+                onThemeChanged();
+                break;
             case "web":
                 Intent i = new Intent(Intent.ACTION_VIEW,
                         android.net.Uri.parse("https://www.google.com/search?q=" + android.net.Uri.encode(arg)));

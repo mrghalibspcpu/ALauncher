@@ -21,7 +21,10 @@ public class Commands {
             "lock — lock the screen",
             "restart — restart the launcher",
             "web — search the web",
-            "sysinfo — device vitals"
+            "sysinfo — device vitals",
+            "theme — switch Liquid Light / Dark",
+            "light — force the light theme",
+            "dark — force the dark theme"
     };
 
     public static List<String> suggest(String q) {

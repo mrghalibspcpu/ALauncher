@@ -85,8 +85,9 @@ public class ActionSheet extends View {
         y = U.clamp(y, U.dpf(40), Math.max(U.dpf(40), getHeight() - h - U.dpf(24)));
         sheetX = x; sheetY = y; sheetW = w; sheetH = h;
 
+        boolean dark = Theme.dark(getContext());
         // scrim
-        p.setColor(U.alpha(0xFF000000, 0.45f * anim));
+        p.setColor(U.alpha(Theme.scrim(dark), 0.75f * anim));
         c.drawRect(0, 0, getWidth(), getHeight(), p);
 
         c.save();
@@ -94,19 +95,11 @@ public class ActionSheet extends View {
         c.scale(s, s, x + w / 2f, above ? y + h : y);
 
         RectF r = new RectF(x, y, x + w, y + h);
-        // shadow
-        p.setColor(0x66000000);
-        p.setMaskFilter(new android.graphics.BlurMaskFilter(U.dpf(18), android.graphics.BlurMaskFilter.Blur.NORMAL));
-        c.drawRoundRect(new RectF(r.left, r.top + U.dpf(6), r.right, r.bottom + U.dpf(8)), U.dpf(26), U.dpf(26), p);
-        p.setMaskFilter(null);
+        U.softShadow(c, r, U.dpf(26), Theme.shadow(dark), U.dpf(10), U.dpf(5));
 
-        p.setColor(0xF21A1D26);
+        p.setColor(Theme.sheetBg(dark));
         c.drawRoundRect(r, U.dpf(26), U.dpf(26), p);
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(U.dpf(1));
-        p.setColor(0x26FFFFFF);
-        c.drawRoundRect(r, U.dpf(26), U.dpf(26), p);
-        p.setStyle(Paint.Style.FILL);
+        Theme.glass(c, getContext(), r, U.dpf(26), dark, accent, 0.9f);
 
         float cy = y + padding;
         if (title != null) {
@@ -118,10 +111,10 @@ public class ActionSheet extends View {
                 c.restore();
             }
             tp.setTextSize(U.dpf(15.5f));
-            tp.setColor(0xFFFFFFFF);
+            tp.setColor(Theme.text(dark));
             tp.setTypeface(android.graphics.Typeface.create("sans-serif-medium", 0));
             c.drawText(U.ellipsize(tp, title, w - U.dpf(70)), x + U.dpf(60), cy + U.dpf(29), tp);
-            p.setColor(0x1AFFFFFF);
+            p.setColor(Theme.divider(dark));
             c.drawRect(x + U.dpf(14), cy + U.dpf(50), x + w - U.dpf(14), cy + U.dpf(50) + U.dpf(1), p);
             cy += headerH;
         }
@@ -131,13 +124,13 @@ public class ActionSheet extends View {
             Row row = rows.get(i);
             float top = cy + i * rowH;
             if (pressed == i) {
-                p.setColor(0x1FFFFFFF);
+                p.setColor(dark ? 0x26FFFFFF : 0x1A000000);
                 c.drawRoundRect(new RectF(x + U.dpf(8), top + U.dpf(2), x + w - U.dpf(8), top + rowH - U.dpf(2)),
                         U.dpf(16), U.dpf(16), p);
             }
-            int col = row.danger ? 0xFFFF6B6B : 0xFFECEFF6;
+            int col = row.danger ? 0xFFE0405A : Theme.text(dark);
             Glyphs.draw(c, row.glyph, x + U.dpf(30), top + rowH / 2f, U.dpf(9),
-                    row.danger ? 0xFFFF6B6B : accent);
+                    row.danger ? 0xFFE0405A : accent);
             tp.setColor(col);
             c.drawText(U.ellipsize(tp, row.label, w - U.dpf(70)), x + U.dpf(54),
                     top + rowH / 2f + U.dpf(5.2f), tp);

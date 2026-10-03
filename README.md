@@ -6,6 +6,10 @@ its **own Control Center**.
 
 **Installable APK:** [`dist/ALauncher.apk`](dist/ALauncher.apk) (signed, minSdk 24 / Android 7+, targetSdk 34)
 
+> **v2 note:** the signing key changed between v1 and v2, so uninstall the old build once
+> before installing this one. From v2 on the key is committed, so every future APK updates
+> in place.
+
 ---
 
 ## Install
@@ -40,13 +44,52 @@ its **own Control Center**.
 | Theming | 10 accents, dynamic accent extracted from the last opened app's icon, blur-behind panels |
 | Settings | One-scroll control of grid, drawer, sizes, shapes, toggles, permissions and lists |
 
+## Two themes — Liquid Light & Liquid Dark
+
+Both themes are built on the same renderer: your wallpaper is blurred into a soft
+background plate, and every surface on top of it is a **liquid glass** card — refracted
+backdrop, accent bloom, specular sweep along the top edge, hairline rim light and a
+layered lift shadow.
+
+* **Liquid Light** — bright blurred wallpaper, frosted white glass, dark icons and text.
+* **Liquid Dark** — the exact inverse: deep blurred wallpaper, smoked glass, light icons.
+* **Auto** follows the system day/night setting.
+
+Switch from the Control Center *Theme* tile, the home long-press menu, `:light` / `:dark`
+in search, or Settings → Theme. Status-bar icons flip with the theme too.
+
+## Depth Clock
+
+The clock is not a text view — it is rendered from separate layers that parallax apart as
+you tilt the phone (gyroscope), so it sits *inside* the wallpaper:
+
+1. a wide accent glow,
+2. a nine-step extrusion that gives the numerals real thickness,
+3. the gradient face,
+4. a rim light and a specular sweep across the top half,
+5. a glass date capsule that floats closest to you,
+
+with home icons drawn in front of the whole stack. Four styles — **Depth, Stacked,
+Minimal, Analog glass** — and a 70–150 % size slider.
+
 ## …and things no other launcher has
 
-* **A Control Center** — the launcher's own quick-settings panel. Glass tiles for Wi-Fi,
-  Bluetooth, mobile data, airplane, torch, auto-rotate, DND and Focus Mode; vertical
-  brightness and volume sliders; a live media card (art, title, prev/play/next) driven by
-  the real media session; battery ring with temperature, RAM and storage vitals.
+* **A Control Center** — a full replacement for the system quick-settings panel, in glass.
   Swipe down on the right half of the home screen.
+  * **Toggles that really switch in place:** torch, auto-rotate, Do Not Disturb,
+    ringer (ring → vibrate → silent), account sync, screen-timeout cycle, caffeine
+    (keep-awake), theme, Focus Mode, screen lock, and Wi-Fi/Bluetooth on older Android.
+  * **Live state + one-tap deep links** for everything the OS reserves for itself:
+    Wi-Fi (with the connected SSID), mobile data (with the current transport), Bluetooth,
+    airplane, location, battery saver, hotspot, NFC, night light, cast.
+  * **Three vertical sliders** — brightness (writes the real system brightness),
+    media volume and ring volume.
+  * **Media card** — album art, title, artist, previous / play-pause / next from the real
+    media session.
+  * **Vitals card** — battery ring, temperature, voltage, charging state, free RAM,
+    free storage, network transport and uptime.
+  * **Shortcut row** — calculator, camera, alarms, system settings, A Launcher settings.
+  * The whole panel scrolls, and every tile is a liquid-glass card.
 * **Glyph Launch** — press and hold for a moment on empty space, then *draw a letter*.
   A built-in $1-style unistroke recogniser (C G J L M N O P S T U V W Z) opens the app you
   use most starting with that letter. `O` opens Orbit, `S` opens search.
@@ -67,6 +110,13 @@ its **own Control Center**.
 * **Ambient layer** — drifting particle field and an accent glow that parallax with the
   accelerometer, so the wallpaper feels alive without replacing it.
 * **Split launch** — long press any app → *Open in split screen* next to the current one.
+* **App Lock** — guard any app with a 4-digit PIN; a glass keypad appears before it opens.
+* **Icon packs** — install any ADW / Nova / GO icon pack and A Launcher reads its
+  `appfilter.xml` and themes every matching icon.
+* **App shortcuts** — the long-press menu also lists the app's own dynamic shortcuts
+  (new message, new tab, …) and launches them directly.
+* **Search pill** on the home screen, **suggestions row** at the top of the drawer, and
+  **export / import** of every setting as JSON.
 
 ---
 
@@ -109,6 +159,10 @@ app/AndroidManifest.xml
 app/res/…                  icon (adaptive vector), theme, device-admin policy
 app/src/com/alauncher/
   Launcher.java            home activity, surfaces, widgets, menus, commands
+  Theme.java               Liquid Light / Dark palette + glassmorphism renderer
+  DepthClock.java          layered parallax clock (4 styles)
+  IconPacks.java           ADW / Nova / GO icon pack loader
+  LockView.java            app-lock PIN pad
   HomeView.java            pages, cells, folders, dock, drag & drop, glyph canvas
   DrawerView.java          drawer grid, search, rail, calculator, palette
   ControlCenter.java       tiles, sliders, media card, vitals
@@ -128,4 +182,4 @@ SettingsActivity.java      every preference, built in code
 ```
 
 No images are shipped: all artwork (app icon, every glyph, folder plates, gradients) is
-drawn by vector code at runtime, which is why the whole launcher is an **85 KB APK**.
+drawn by vector code at runtime, which is why the whole launcher is a **~105 KB APK**.

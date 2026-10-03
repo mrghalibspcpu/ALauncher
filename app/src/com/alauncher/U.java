@@ -7,6 +7,7 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Matrix;
+import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
@@ -144,6 +145,45 @@ public final class U {
             default:
                 p.addRoundRect(r, r.width() * 0.32f, r.height() * 0.32f, Path.Direction.CW);
                 return p;
+        }
+    }
+
+    /** Layered translucent shadow — works on the hardware canvas, no mask filter. */
+    public static void softShadow(Canvas c, RectF r, float rad, int color, float spread, float dy) {
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        int layers = 4;
+        for (int i = layers; i >= 1; i--) {
+            float g = spread * i / layers;
+            p.setColor(alpha(color, 0.055f * (layers - i + 1)));
+            c.drawRoundRect(new RectF(r.left - g, r.top - g + dy, r.right + g, r.bottom + g + dy),
+                    rad + g, rad + g, p);
+        }
+    }
+
+    /** Same idea for an arbitrary shape (icon squircles). */
+    public static void softShadowPath(Canvas c, Path path, RectF bounds, int color, float spread, float dy) {
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        int layers = 3;
+        for (int i = layers; i >= 1; i--) {
+            float g = 1f + spread * i / layers / Math.max(1f, bounds.width()) ;
+            c.save();
+            c.translate(0, dy);
+            c.scale(g, g, bounds.centerX(), bounds.centerY());
+            p.setColor(alpha(color, 0.07f * (layers - i + 1)));
+            c.drawPath(path, p);
+            c.restore();
+        }
+    }
+
+    /** Outer glow for text, drawn with widening strokes. */
+    public static void textGlow(Canvas c, String text, float x, float y, Paint base, int color, float maxWidth) {
+        Paint p = new Paint(base);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeJoin(Paint.Join.ROUND);
+        for (int i = 3; i >= 1; i--) {
+            p.setStrokeWidth(maxWidth * i / 3f);
+            p.setColor(alpha(color, 0.10f + 0.04f * (3 - i)));
+            c.drawText(text, x, y, p);
         }
     }
 

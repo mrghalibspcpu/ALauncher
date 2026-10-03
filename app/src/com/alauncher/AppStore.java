@@ -81,6 +81,8 @@ public class AppStore {
         List<AppItem> result = new ArrayList<>();
         Map<String, AppItem> map = new HashMap<>();
         int shape = prefs.iconShape();
+        String pack = prefs.iconPack();
+        if (!pack.isEmpty()) IconPacks.ensureLoaded(ctx, pack);
         for (ResolveInfo ri : ris) {
             try {
                 AppItem a = new AppItem();
@@ -88,7 +90,11 @@ public class AppStore {
                 a.cls = ri.activityInfo.name;
                 a.label = String.valueOf(ri.loadLabel(pm));
                 a.sortKey = a.label.toLowerCase(Locale.getDefault());
-                a.icon = IconFactory.make(ctx, ri.loadIcon(pm), shape);
+                android.graphics.drawable.Drawable raw = null;
+                if (!pack.isEmpty()) raw = IconPacks.icon(ctx, pack, a.pkg, a.cls);
+                boolean themed = raw != null;
+                if (raw == null) raw = ri.loadIcon(pm);
+                a.icon = themed ? IconFactory.fromPack(raw) : IconFactory.make(ctx, raw, shape);
                 a.color = U.boost(U.dominantColor(a.icon), 1.15f, 1.1f);
                 a.customLabel = prefs.s("name_" + a.key(), null);
                 JSONObject u = usage.optJSONObject(a.key());

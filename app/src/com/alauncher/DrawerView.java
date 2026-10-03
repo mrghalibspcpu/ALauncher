@@ -43,6 +43,7 @@ public class DrawerView extends FrameLayout {
     private final EditText search;
     private final AppStore store;
     private String query = "";
+    private boolean dark = true;
 
     public DrawerView(Context c, Host h) {
         super(c);
@@ -53,17 +54,11 @@ public class DrawerView extends FrameLayout {
 
         search = new EditText(c);
         search.setHint("Search apps, maths, or type :");
-        search.setHintTextColor(0x66FFFFFF);
-        search.setTextColor(0xFFFFFFFF);
         search.setTextSize(15f);
         search.setSingleLine(true);
         search.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
         search.setPadding(U.dp(46), U.dp(10), U.dp(16), U.dp(10));
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0x1FFFFFFF);
-        bg.setCornerRadius(U.dpf(24));
-        bg.setStroke(U.dp(1), 0x1AFFFFFF);
-        search.setBackground(bg);
+        applyTheme();
         LayoutParams lp = new LayoutParams(LayoutParams.MATCH_PARENT, U.dp(48));
         lp.setMargins(U.dp(18), U.dp(46), U.dp(18), 0);
         lp.gravity = Gravity.TOP;
@@ -105,7 +100,20 @@ public class DrawerView extends FrameLayout {
         search.clearFocus();
     }
 
-    public void refresh() { grid.rebuild(); }
+    public void refresh() { applyTheme(); grid.rebuild(); }
+
+    /** Repaints the search field for the current theme. */
+    public void applyTheme() {
+        dark = Theme.dark(getContext());
+        search.setHintTextColor(Theme.textFaint(dark));
+        search.setTextColor(Theme.text(dark));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(dark ? 0x26FFFFFF : 0x80FFFFFF);
+        bg.setCornerRadius(U.dpf(24));
+        bg.setStroke(U.dp(1), dark ? 0x33FFFFFF : 0x66FFFFFF);
+        search.setBackground(bg);
+        grid.invalidate();
+    }
 
     public void setSearchVisible(boolean v) { search.setVisibility(v ? VISIBLE : GONE); }
 
@@ -153,6 +161,13 @@ public class DrawerView extends FrameLayout {
                 }
             } else {
                 list = store.visible();
+                if (Prefs.get(getContext()).suggestions()) {
+                    List<AppItem> sug = store.predict(Prefs.get(getContext()).drawerCols(), null);
+                    if (!sug.isEmpty()) {
+                        rows.add("SUGGESTED NOW");
+                        rows.add(sug.toArray(new AppItem[0]));
+                    }
+                }
             }
             if (mathResult != null) rows.add(0, "\u0002" + mathResult);
             String section = null;
@@ -209,13 +224,8 @@ public class DrawerView extends FrameLayout {
             scrollYv = U.clamp(scrollYv, 0, maxScroll());
             int accent = host.accent();
 
-            // glass background
-            p.setColor(0xF00A0C12);
-            c.drawRect(0, 0, getWidth(), getHeight(), p);
-            p.setShader(new android.graphics.LinearGradient(0, 0, getWidth(), getHeight(),
-                    U.alpha(accent, 0.10f), 0x00000000, android.graphics.Shader.TileMode.CLAMP));
-            c.drawRect(0, 0, getWidth(), getHeight(), p);
-            p.setShader(null);
+            dark = Theme.dark(getContext());
+            Theme.sheet(c, getContext(), getWidth(), getHeight(), dark, accent);
 
             Glyphs.draw(c, Glyphs.SEARCH, U.dpf(42), U.dpf(70), U.dpf(9), U.alpha(accent, 0.8f));
 
@@ -235,10 +245,10 @@ public class DrawerView extends FrameLayout {
                         drawWebRow(c, y, s.substring(1), accent);
                     } else {
                         tp.setTextSize(U.dpf(12.5f));
-                        tp.setColor(U.alpha(accent, 0.85f));
+                        tp.setColor(U.alpha(accent, 0.95f));
                         tp.setTypeface(Typeface.create("sans-serif-medium", 0));
                         c.drawText(s, U.dpf(22), y + U.dpf(24), tp);
-                        p.setColor(0x14FFFFFF);
+                        p.setColor(Theme.divider(dark));
                         c.drawRect(U.dpf(22) + tp.measureText(s) + U.dpf(10), y + U.dpf(19),
                                 getWidth() - U.dpf(44), y + U.dpf(20), p);
                     }
@@ -272,7 +282,7 @@ public class DrawerView extends FrameLayout {
             if (Prefs.get(getContext()).drawerLabels()) {
                 tp.setTextSize(U.dpf(11.5f));
                 tp.setTypeface(Typeface.create("sans-serif", 0));
-                tp.setColor(blocked ? 0x66FFFFFF : 0xE6FFFFFF);
+                tp.setColor(blocked ? Theme.textFaint(dark) : Theme.text(dark));
                 String s = U.ellipsize(tp, a.title(), getWidth() / (float) cols() - U.dpf(8));
                 c.drawText(s, cx - tp.measureText(s) / 2f, r.bottom + U.dpf(17), tp);
             }
@@ -291,31 +301,28 @@ public class DrawerView extends FrameLayout {
 
         void drawMath(Canvas c, float y, String res, int accent) {
             RectF r = new RectF(U.dpf(18), y, getWidth() - U.dpf(18), y + headerH() - U.dpf(6));
-            p.setColor(U.alpha(accent, 0.18f));
-            c.drawRoundRect(r, U.dpf(14), U.dpf(14), p);
+            Theme.glass(c, getContext(), r, U.dpf(14), dark, accent, 0.8f);
             Glyphs.draw(c, Glyphs.CALC, r.left + U.dpf(22), r.centerY(), U.dpf(8), accent);
             tp.setTextSize(U.dpf(14));
-            tp.setColor(0xFFFFFFFF);
+            tp.setColor(Theme.text(dark));
             c.drawText("= " + res, r.left + U.dpf(42), r.centerY() + U.dpf(5), tp);
         }
 
         void drawCommand(Canvas c, float y, String cmd, int accent) {
             RectF r = new RectF(U.dpf(18), y, getWidth() - U.dpf(18), y + headerH() - U.dpf(6));
-            p.setColor(0x14FFFFFF);
-            c.drawRoundRect(r, U.dpf(14), U.dpf(14), p);
+            Theme.glass(c, getContext(), r, U.dpf(14), dark, accent, 0.7f);
             Glyphs.draw(c, Glyphs.BOLT, r.left + U.dpf(22), r.centerY(), U.dpf(8), accent);
             tp.setTextSize(U.dpf(13.5f));
-            tp.setColor(0xFFE7EBF2);
+            tp.setColor(Theme.text(dark));
             c.drawText(cmd, r.left + U.dpf(42), r.centerY() + U.dpf(5), tp);
         }
 
         void drawWebRow(Canvas c, float y, String q, int accent) {
             RectF r = new RectF(U.dpf(18), y, getWidth() - U.dpf(18), y + headerH() - U.dpf(6));
-            p.setColor(0x14FFFFFF);
-            c.drawRoundRect(r, U.dpf(14), U.dpf(14), p);
+            Theme.glass(c, getContext(), r, U.dpf(14), dark, accent, 0.7f);
             Glyphs.draw(c, Glyphs.SEARCH, r.left + U.dpf(22), r.centerY(), U.dpf(8), accent);
             tp.setTextSize(U.dpf(13.5f));
-            tp.setColor(0xFFE7EBF2);
+            tp.setColor(Theme.text(dark));
             c.drawText("Search the web for \"" + q + "\"", r.left + U.dpf(42), r.centerY() + U.dpf(5), tp);
         }
 
@@ -331,7 +338,7 @@ public class DrawerView extends FrameLayout {
             for (int i = 0; i < letters.size(); i++) {
                 float ly = y0 + step * (i + 0.5f);
                 boolean near = railTouchY >= 0 && Math.abs(railTouchY - ly) < U.dpf(26);
-                tp.setColor(near ? accent : 0x80FFFFFF);
+                tp.setColor(near ? accent : Theme.textDim(dark));
                 tp.setTextSize(near ? U.dpf(14) : U.dpf(10.5f));
                 c.drawText(letters.get(i), getWidth() - U.dpf(18) - tp.measureText(letters.get(i)) / 2f,
                         ly + U.dpf(4), tp);

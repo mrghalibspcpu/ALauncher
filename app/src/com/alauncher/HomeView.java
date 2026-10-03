@@ -34,6 +34,7 @@ public class HomeView extends ViewGroup {
 
     public interface Host {
         void openDrawer(float velocity);
+        void focusSearch();
         void openControlCenter();
         void expandNotifications();
         void openApp(AppItem a, View from, float x, float y);
@@ -104,6 +105,15 @@ public class HomeView extends ViewGroup {
     private boolean suppressTap;
     private long pageFlipTime;
 
+    private boolean dark = true;
+    private final RectF searchPill = new RectF();
+    private final Runnable ticker = new Runnable() {
+        public void run() {
+            invalidate();
+            postDelayed(this, 1000);
+        }
+    };
+
     // ambient
     private final float[] px = new float[34], py = new float[34], pr = new float[34], pv = new float[34];
     private float tiltX, tiltY;
@@ -123,6 +133,17 @@ public class HomeView extends ViewGroup {
             pr[i] = 0.6f + rnd.nextFloat() * 2.2f;
             pv[i] = 0.00004f + rnd.nextFloat() * 0.00016f;
         }
+    }
+
+    @Override protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        removeCallbacks(ticker);
+        postDelayed(ticker, 1000);
+    }
+
+    @Override protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+        removeCallbacks(ticker);
     }
 
     // --------------------------------------------------------- persistence
@@ -270,10 +291,24 @@ public class HomeView extends ViewGroup {
         sidePad = U.dpf(10);
         dockH = U.dpf(96);
         dockTop = h - dockH - U.dpf(12);
-        gridTop = U.dpf(128);
+        gridTop = U.dpf(46) + clockHeight();
+        if (prefs.searchPill()) dockTop -= U.dpf(50);
         gridBottom = dockTop - U.dpf(26);
+        searchPill.set(U.dpf(26), dockTop + dockH + U.dpf(4),
+                w - U.dpf(26), dockTop + dockH + U.dpf(44));
         cellW = (w - sidePad * 2) / (float) prefs.gridCols();
         cellH = (gridBottom - gridTop) / (float) prefs.gridRows();
+    }
+
+    private float clockHeight() {
+        if (!prefs.statusClock()) return U.dpf(16);
+        float sc = prefs.clockScale();
+        switch (prefs.clockStyle()) {
+            case DepthClock.STACKED: return U.dpf(190) * sc;
+            case DepthClock.MINIMAL: return U.dpf(86) * sc;
+            case DepthClock.ANALOG:  return U.dpf(148) * sc;
+            default:                 return U.dpf(120) * sc;
+        }
     }
 
     public float iconSize() {
@@ -402,6 +437,8 @@ public class HomeView extends ViewGroup {
             positionWidgets();
         }
         int accent = host.accent();
+        dark = Theme.dark(getContext());
+        Theme.backdrop(getContext(), getWidth(), getHeight(), dark);
 
         drawAmbient(c, accent);
         drawClock(c, accent);
@@ -417,6 +454,7 @@ public class HomeView extends ViewGroup {
         c.restore();
 
         drawDock(c, accent);
+        if (prefs.searchPill()) drawSearchPill(c, accent);
         drawPageDots(c, accent);
 
         if (dragItem != null) drawDragLayer(c, accent);
@@ -426,10 +464,22 @@ public class HomeView extends ViewGroup {
 
     private void drawAmbient(Canvas c, int accent) {
         float w = getWidth(), h = getHeight();
+        // Liquid background: the wallpaper, blurred, tinted to the active theme
+        if (prefs.b("blur_home", true)) {
+            Bitmap bd = Theme.backdrop(getContext(), (int) w, (int) h, dark);
+            if (bd != null) {
+                p.setFilterBitmap(true);
+                c.drawBitmap(bd, null, new RectF(tiltX * U.dpf(10) - U.dpf(10),
+                        tiltY * U.dpf(10) - U.dpf(10), w + U.dpf(10), h + U.dpf(10)), p);
+                p.setColor(dark ? 0x73070A10 : 0x8CFFFFFF);
+                c.drawRect(0, 0, w, h, p);
+            }
+        }
         // vignette + accent glow so icons stay readable on any wallpaper
         p.setShader(new android.graphics.RadialGradient(w * 0.5f + tiltX * U.dpf(18),
                 h * 0.22f + tiltY * U.dpf(18), h * 0.9f,
-                new int[]{U.alpha(accent, 0.16f), 0x00000000, 0x80000000},
+                new int[]{U.alpha(accent, dark ? 0.16f : 0.12f), 0x00000000,
+                        dark ? 0x80000000 : 0x40FFFFFF},
                 new float[]{0f, 0.55f, 1f}, android.graphics.Shader.TileMode.CLAMP));
         c.drawRect(0, 0, w, h, p);
         p.setShader(null);
@@ -442,39 +492,42 @@ public class HomeView extends ViewGroup {
             if (px[i] < -0.05f) px[i] = 1.05f;
             float x = px[i] * w + tiltX * U.dpf(10) * pr[i];
             float y = py[i] * h + tiltY * U.dpf(10) * pr[i];
-            p.setColor(U.alpha(i % 3 == 0 ? accent : 0xFFFFFFFF, 0.05f + 0.05f * pr[i] / 2.8f));
+            p.setColor(U.alpha(i % 3 == 0 ? accent : (dark ? 0xFFFFFFFF : 0xFF2A3545),
+                    0.05f + 0.05f * pr[i] / 2.8f));
             c.drawCircle(x, y, U.dpf(pr[i]), p);
         }
-        postInvalidateOnAnimation();
+        postInvalidateDelayed(33);
     }
 
     private void drawClock(Canvas c, int accent) {
         if (!prefs.statusClock()) return;
-        Date now = new Date();
-        tp.setTypeface(Typeface.create("sans-serif-thin", 0));
-        tp.setTextSize(U.dpf(52));
-        tp.setColor(0xFFFFFFFF);
-        tp.setShadowLayer(U.dpf(10), 0, U.dpf(2), 0x66000000);
-        String time = new SimpleDateFormat("HH:mm", Locale.getDefault()).format(now);
-        c.drawText(time, U.dpf(24), gridTop - U.dpf(44), tp);
-        tp.setTypeface(Typeface.create("sans-serif-medium", 0));
-        tp.setTextSize(U.dpf(13));
-        tp.setColor(0xCCFFFFFF);
-        String date = new SimpleDateFormat("EEEE, d MMMM", Locale.getDefault()).format(now);
-        c.drawText(date, U.dpf(26), gridTop - U.dpf(22), tp);
-        tp.clearShadowLayer();
+        DepthClock.draw(c, getContext(), U.dpf(24), U.dpf(46), getWidth() - U.dpf(48),
+                dark, accent, tiltX, tiltY, prefs.clockStyle(), prefs.clockScale());
 
         if (Focus.active(getContext())) {
             String s = "FOCUS " + Focus.remainingMin(getContext()) + "m";
+            tp.setTypeface(Typeface.create("sans-serif-medium", 0));
             tp.setTextSize(U.dpf(10.5f));
-            float w = tp.measureText(s) + U.dpf(24);
-            RectF r = new RectF(getWidth() - U.dpf(24) - w, gridTop - U.dpf(72),
-                    getWidth() - U.dpf(24), gridTop - U.dpf(48));
-            p.setColor(U.alpha(accent, 0.22f));
-            c.drawRoundRect(r, U.dpf(12), U.dpf(12), p);
-            tp.setColor(accent);
-            c.drawText(s, r.left + U.dpf(12), r.centerY() + U.dpf(3.6f), tp);
+            float w = tp.measureText(s) + U.dpf(26);
+            RectF r = new RectF(getWidth() - U.dpf(22) - w, U.dpf(46),
+                    getWidth() - U.dpf(22), U.dpf(74));
+            Theme.glassActive(c, getContext(), r, r.height() / 2f, dark, accent);
+            tp.setColor(Theme.onAccent(accent));
+            c.drawText(s, r.left + U.dpf(13), r.centerY() + U.dpf(3.8f), tp);
         }
+    }
+
+    private void drawSearchPill(Canvas c, int accent) {
+        Theme.glass(c, getContext(), searchPill, searchPill.height() / 2f, dark, accent, 0.9f);
+        Glyphs.draw(c, Glyphs.SEARCH, searchPill.left + U.dpf(26), searchPill.centerY(),
+                U.dpf(8.5f), accent);
+        tp.setTypeface(Typeface.create("sans-serif", 0));
+        tp.setTextSize(U.dpf(13));
+        tp.setColor(Theme.textDim(dark));
+        c.drawText("Search apps, maths, commands", searchPill.left + U.dpf(44),
+                searchPill.centerY() + U.dpf(4.6f), tp);
+        Glyphs.draw(c, Glyphs.GRID, searchPill.right - U.dpf(26), searchPill.centerY(),
+                U.dpf(8.5f), Theme.icon(dark));
     }
 
     private void drawItem(Canvas c, Item it, int accent) {
@@ -498,12 +551,9 @@ public class HomeView extends ViewGroup {
             p.setColor(U.alpha(accent, 0.3f));
             c.drawCircle(cx, cy, sz * 0.78f, p);
         }
-        // soft shadow
-        p.setColor(0x40000000);
-        p.setMaskFilter(new android.graphics.BlurMaskFilter(U.dpf(7), android.graphics.BlurMaskFilter.Blur.NORMAL));
-        c.drawPath(U.shapePath(prefs.iconShape(), new RectF(ir.left + U.dpf(1), ir.top + U.dpf(4),
-                ir.right - U.dpf(1), ir.bottom + U.dpf(2))), p);
-        p.setMaskFilter(null);
+        // soft shadow (layered, hardware friendly)
+        U.softShadowPath(c, U.shapePath(prefs.iconShape(), ir), ir,
+                dark ? 0xFF000000 : 0xFF2A3545, U.dpf(10), U.dpf(3));
 
         p.setAlpha(blocked ? 80 : 255);
         if (a.icon != null) c.drawBitmap(a.icon, null, ir, p);
@@ -524,8 +574,8 @@ public class HomeView extends ViewGroup {
         if (label) {
             tp.setTypeface(Typeface.create("sans-serif", 0));
             tp.setTextSize(U.dpf(11.5f));
-            tp.setColor(blocked ? 0x80FFFFFF : 0xFFFFFFFF);
-            tp.setShadowLayer(U.dpf(4), 0, U.dpf(1), 0xAA000000);
+            tp.setColor(blocked ? Theme.textFaint(dark) : Theme.text(dark));
+            Theme.labelShadow(tp, dark);
             String s = U.ellipsize(tp, a.title(), cellW - U.dpf(6));
             c.drawText(s, cx - tp.measureText(s) / 2f, cy + sz / 2 + U.dpf(16), tp);
             tp.clearShadowLayer();
@@ -538,12 +588,8 @@ public class HomeView extends ViewGroup {
             p.setColor(U.alpha(accent, 0.3f));
             c.drawCircle(cx, cy, sz * 0.8f, p);
         }
-        p.setColor(0x4DFFFFFF);
         Path shape = U.shapePath(prefs.iconShape(), ir);
-        p.setColor(0x33000000);
-        c.drawPath(shape, p);
-        p.setColor(0x33FFFFFF);
-        c.drawPath(shape, p);
+        Theme.glass(c, getContext(), ir, sz * 0.26f, dark, accent, 0.8f);
         c.save();
         c.clipPath(shape);
         float pad = sz * 0.1f;
@@ -559,8 +605,8 @@ public class HomeView extends ViewGroup {
         if (prefs.homeLabels()) {
             tp.setTypeface(Typeface.create("sans-serif", 0));
             tp.setTextSize(U.dpf(11.5f));
-            tp.setColor(0xFFFFFFFF);
-            tp.setShadowLayer(U.dpf(4), 0, U.dpf(1), 0xAA000000);
+            tp.setColor(Theme.text(dark));
+            Theme.labelShadow(tp, dark);
             String s = U.ellipsize(tp, it.name, cellW - U.dpf(6));
             c.drawText(s, cx - tp.measureText(s) / 2f, cy + sz / 2 + U.dpf(16), tp);
             tp.clearShadowLayer();
@@ -589,13 +635,7 @@ public class HomeView extends ViewGroup {
     private void drawDock(Canvas c, int accent) {
         List<Item> slots = dockSlots();
         RectF pill = new RectF(U.dpf(12), dockTop, getWidth() - U.dpf(12), dockTop + dockH);
-        p.setColor(0x33101218);
-        c.drawRoundRect(pill, U.dpf(30), U.dpf(30), p);
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(U.dpf(1));
-        p.setColor(0x1AFFFFFF);
-        c.drawRoundRect(pill, U.dpf(30), U.dpf(30), p);
-        p.setStyle(Paint.Style.FILL);
+        Theme.glass(c, getContext(), pill, U.dpf(30), dark, accent, 1f);
 
         tp.setTextSize(U.dpf(9));
         tp.setTypeface(Typeface.create("sans-serif-medium", 0));
@@ -627,7 +667,8 @@ public class HomeView extends ViewGroup {
         for (int i = 0; i < pageCount; i++) {
             float d = Math.abs(cur - i);
             float rr = U.lerp(U.dpf(2.4f), U.dpf(4.2f), U.clamp(1 - d, 0, 1));
-            p.setColor(U.alpha(d < 0.5f ? accent : 0xFFFFFFFF, U.lerp(0.3f, 1f, U.clamp(1 - d, 0, 1))));
+            p.setColor(U.alpha(d < 0.5f ? accent : Theme.icon(dark),
+                    U.lerp(0.3f, 1f, U.clamp(1 - d, 0, 1))));
             c.drawCircle(x0 + i * gap, y, rr, p);
         }
     }
@@ -640,10 +681,11 @@ public class HomeView extends ViewGroup {
         for (int i = 0; i < 4; i++) {
             RectF r = new RectF(U.dpf(18) + i * w, U.dpf(44), U.dpf(18) + (i + 1) * w - U.dpf(8), U.dpf(44) + U.dpf(52));
             boolean on = dropAction == i;
-            p.setColor(on ? U.alpha(i == 2 ? 0xFFFF5A5A : accent, 0.9f) : 0x33151821);
-            c.drawRoundRect(r, U.dpf(18), U.dpf(18), p);
-            int fg = on ? 0xFF0A0C12 : 0xFFE7EBF2;
+            if (on) Theme.glassActive(c, getContext(), r, U.dpf(18), dark, i == 2 ? 0xFFFF5A5A : accent);
+            else Theme.glass(c, getContext(), r, U.dpf(18), dark, accent, 0.85f);
+            int fg = on ? Theme.onAccent(i == 2 ? 0xFFFF5A5A : accent) : Theme.icon(dark);
             Glyphs.draw(c, glyphs[i], r.centerX(), r.centerY() - U.dpf(5), U.dpf(8), fg);
+            tp.setTypeface(Typeface.create("sans-serif-medium", 0));
             tp.setTextSize(U.dpf(9.5f));
             tp.setColor(fg);
             String s = labels[i];
@@ -672,14 +714,14 @@ public class HomeView extends ViewGroup {
         c.drawPath(path, p);
         p.setMaskFilter(null);
         p.setStrokeWidth(U.dpf(3.4f));
-        p.setColor(U.alpha(0xFFFFFFFF, 0.92f));
+        p.setColor(U.alpha(dark ? 0xFFFFFFFF : 0xFF11161F, 0.92f));
         c.drawPath(path, p);
         p.setStyle(Paint.Style.FILL);
     }
 
     private void drawFolder(Canvas c, int accent) {
         float t = folderAnim;
-        p.setColor(U.alpha(0xFF05070C, 0.82f * t));
+        p.setColor(U.alpha(Theme.scrim(dark), 0.95f * t));
         c.drawRect(0, 0, getWidth(), getHeight(), p);
         if (folderOpen == null) return;
         float w = getWidth() - U.dpf(56);
@@ -690,16 +732,10 @@ public class HomeView extends ViewGroup {
         RectF r = new RectF(U.dpf(28), getHeight() / 2f - h / 2f, getWidth() - U.dpf(28), getHeight() / 2f + h / 2f);
         c.save();
         c.scale(U.lerp(0.85f, 1f, t), U.lerp(0.85f, 1f, t), r.centerX(), r.centerY());
-        p.setColor(U.alpha(0xFF141821, 0.96f * t));
-        c.drawRoundRect(r, U.dpf(32), U.dpf(32), p);
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(U.dpf(1));
-        p.setColor(U.alpha(accent, 0.3f * t));
-        c.drawRoundRect(r, U.dpf(32), U.dpf(32), p);
-        p.setStyle(Paint.Style.FILL);
+        Theme.glass(c, getContext(), r, U.dpf(32), dark, accent, t);
         tp.setTextSize(U.dpf(16));
         tp.setTypeface(Typeface.create("sans-serif-medium", 0));
-        tp.setColor(U.alpha(0xFFFFFFFF, t));
+        tp.setColor(U.alpha(Theme.text(dark), t));
         c.drawText(folderOpen.name, r.left + U.dpf(24), r.top + U.dpf(36), tp);
         tp.setTextSize(U.dpf(10.5f));
         tp.setColor(U.alpha(accent, 0.8f * t));
@@ -861,6 +897,11 @@ public class HomeView extends ViewGroup {
             }
             if (prefs.dynamicAccent()) host.onAccentSuggestion(a.color);
             host.openApp(a, this, x, y);
+            return;
+        }
+        if (prefs.searchPill() && searchPill.contains(x, y)) {
+            host.openDrawer(0);
+            postDelayed(new Runnable() { public void run() { host.focusSearch(); } }, 260);
             return;
         }
         if (y < gridTop && y > U.dpf(30)) {       // clock tap

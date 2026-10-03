@@ -104,6 +104,15 @@ public class IconFactory {
         return out;
     }
 
+    /** Icon pack art is already styled — just normalise its size. */
+    public static Bitmap fromPack(Drawable d) {
+        Bitmap out = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(out);
+        d.setBounds(0, 0, SIZE, SIZE);
+        d.draw(c);
+        return out;
+    }
+
     public static Bitmap toBitmap(Drawable d) {
         if (d == null) return null;
         if (d instanceof BitmapDrawable && ((BitmapDrawable) d).getBitmap() != null) {
