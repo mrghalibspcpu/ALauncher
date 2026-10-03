@@ -1,0 +1,4 @@
+.build/
+.keystore/
+*.ap_
+*.unsigned.apk
